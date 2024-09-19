@@ -2,7 +2,10 @@ from sqlalchemy import create_engine, desc as sqlalchemy_desc
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 
-from app.models import Base, FlightsSearchConfiguration
+# Create the Base class
+Base = declarative_base()
+
+from app.models import FlightsSearchConfiguration, AppRun
 
 class DbService:
     def __init__(self, db_url):
@@ -13,7 +16,7 @@ class DbService:
     
     def select(self, model, filters, order_by=None, limit=None, desc=False):
         session = self.SessionLocal()
-        query = session.query(model).filter_by(**filters)
+        query = session.query(model).filter_by(**filters) if filters else session.query(model)
         
         if order_by:
             if desc:
@@ -27,3 +30,18 @@ class DbService:
         result = query.all()
         session.close()
         return result
+    
+    def insert(self, model, data):
+        session = self.SessionLocal()
+        instance = model(**data)
+        session.add(instance)
+        session.commit()
+        session.close()
+
+    def update(self, model, id, data):
+        session = self.SessionLocal()
+        instance = session.query(model).filter_by(id=id).first()
+        for key, value in data.items():
+            setattr(instance, key, value)
+        session.commit()
+        session.close()
