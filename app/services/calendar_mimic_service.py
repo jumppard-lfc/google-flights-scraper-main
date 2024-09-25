@@ -116,12 +116,26 @@ class CalendarMimicService:
                 root_curl_obj = self.__parse_curl(root_curl) # parse the cURL to get the root cURL object with all cURL parts as attributes
                 for flight in flight_configurations:
                     # Generate cURLs for each flight configuration. For example: all 7 days of stay roundtrips from BTS to JFK, for next 180 days
-                    curls = self.__generate_curls(root_curl_obj, flight.origin, flight.destination, flight.days_of_stay)
+                    curls = self.__generate_curls(root_curl_obj, flight.days_of_stay)
                     result.extend(curls)
         return result
 
     def __generate_result_curls(self, destinations: dict):
-        result = []
+        # example of `destinations`
+        # {
+        #     "JFK":
+        #     [
+        #         FlightsSearchConfiguration(origin='BTS', destination='JFK', days_of_stay=2, is_active=True, created_at=datetime.datetime(2021, 9, 1, 0, 0), updated_at=datetime.datetime(2021, 9, 1, 0, 0)),
+        #         FlightsSearchConfiguration(origin='BTS', destination='JFK', days_of_stay=3, is_active=True, created_at=datetime.datetime(2021, 9, 1, 0, 0), updated_at=datetime.datetime(2021, 9, 1, 0, 0))
+        #     ],
+        #     "LAX":
+        #     [
+        #         FlightsSearchConfiguration(origin='BTS', destination='LAX', days_of_stay=2, is_active=True, created_at=datetime.datetime(2021, 9, 1, 0, 0), updated_at=datetime.datetime(2021, 9, 1, 0, 0)),
+        #         FlightsSearchConfiguration(origin='BTS', destination='LAX', days_of_stay=3, is_active=True, created_at=datetime.datetime(2021, 9, 1, 0, 0), updated_at=datetime.datetime(2021, 9, 1, 0, 0))
+        #     ],
+        #     ...
+        # }
+        result = {}
         for destination, flight_configurations in destinations.items():
             if len(flight_configurations) > 0:
                 origins = flight_configurations[0].origin.split(',')
@@ -129,8 +143,8 @@ class CalendarMimicService:
                 root_curl_obj = self.__parse_curl(root_curl) # parse the cURL to get the root cURL object with all cURL parts as attributes
                 for flight in flight_configurations:
                     # Generate cURLs for each flight configuration. For example: all 7 days of stay roundtrips from BTS to JFK, for next 180 days
-                    curls = self.__generate_curls(root_curl_obj, flight.origin, flight.destination, flight.days_of_stay)
-                    result.extend(curls)
+                    curls = self.__generate_curls(root_curl_obj, flight.days_of_stay)
+                    result[destination][flight.days_of_stay].extend(curls)
         return result
     
     def __generate_root_curl(self, origins: List[str], destination: str, days_of_stay: int):
@@ -276,11 +290,11 @@ class CalendarMimicService:
             "data": data
         }
 
-    def __generate_curls(self, root_curl_obj, origin: str, destination: str, days_of_stay: int):
+    def __generate_curls(self, root_curl_obj, days_of_stay: int):
         '''
         Generate cURLs for each flight configuration. For example: all `days_of_stay` days of stay roundtrips from `origin` to `destination`, for next 180 days.
-        To get prices for next 180 days, we need to generate only around 4 cURLs, because in calendar picker we see prices for curernt month and the following month. 
-        return the list of cURLs
+        To get prices for next 180 days for the specific `day_of_stay` days of stay, we need to generate only around 4 cURLs, because in calendar picker we see prices for curernt month and the following month. 
+        return the list of cURLs.
 
         The logic for generating cURLs:
         1. calculate the neccessary number of clicks on calendar (next page) to get the prices for next 180 days, according to the current date
@@ -303,7 +317,7 @@ class CalendarMimicService:
         return curls
     
     def __get_last_date_of_next_month(self):
-        return datetime.now().replace(day=1, month=datetime.now().month+1) - timedelta(days=1)
+        return datetime.now().replace(day=1, month=datetime.now().month+2) - timedelta(days=1)
 
     def __calculate_next_page_clicks(self):
         ''''
@@ -316,22 +330,52 @@ class CalendarMimicService:
         '''
         today = datetime.now()
         
-        # region current month coverage
+
+        # region covering 1st page in Calendar (today month + following month)
+        ##############################################################
+        # covering the 1st and 2nd months in 1st page in Calendar
+        ##############################################################
+        
         # get the last date of the current month
-        last_day_of_current_month = today.replace(day=1, month=today.month+1) - timedelta(days=1)
+        last_day_of_current_month = self.__get_last_date_of_current_month(today)
         
         # get the number of active dates in current month (including today)
-        active_dates_in_current_month = last_day_of_current_month.day - today.day
-        # endregion current month coverage
+        active_dates_in_current_month = last_day_of_current_month.day - today.day + 1
+
+        # get the last date of the next month
+        last_day_of_next_month = self.__get_last_date_of_next_month(today)
+
+        # get the number of active dates in next month
+        active_dates_in_next_month = last_day_of_next_month.day
+
+        # calculate the number of active dates in both months (current month + next month)
+        covered_days = active_dates_in_current_month + active_dates_in_next_month 
+        # endregion covering 1st page in Calendar (current month + next month)
 
         # region next months coverage
-        covered_days = active_dates_in_current_month # so far, there are `active_dates_in_current_month` covered days. In the following while loop, we will increase this counter
+        ##############################################################
+        # covering the 1st and 2nd months in next page in Calendar
+        ##############################################################
         number_of_neccessary_clicks = 0
+        next_month_cnt = 3 # we start with the 3rd next month (2nd page in Calendar)
         while covered_days < 180:
-            # get the number of active dates in next month
-            last_day_of_next_month = last_day_of_current_month.replace(day=1, month=last_day_of_current_month.month+2) - timedelta(days=1)
+
+            # get the number of active dates for the 1st month
+            today_current = self.__get_increased_today_current(today, next_month_cnt) 
+            last_day_of_first_month = self.__get_last_date_of_current_month(today_current)
             # increase the counter by the number of active dates in next month
-            covered_days += last_day_of_next_month.day
+            covered_days += last_day_of_first_month.day
+            # increase the counter for the next month
+            next_month_cnt += 1
+            
+            # get the number of active dates for the 2nd month
+            today_current = self.__get_increased_today_current(today, next_month_cnt) 
+            last_day_of_second_month = self.__get_last_date_of_next_month(today_current)
+            # increase the counter by the number of active dates in next month
+            covered_days += last_day_of_second_month.day
+            # increase the counter for the next month
+            next_month_cnt += 1
+            
             # increase the number of necessary clicks
             number_of_neccessary_clicks += 1
         # endregion next months coverage
@@ -339,6 +383,49 @@ class CalendarMimicService:
         # return the number of necessary clicks on calendar (next page) to get the prices for next 180 days
         return number_of_neccessary_clicks
 
+    def __get_last_date_of_current_month(self, current_date: datetime):
+        
+        # result
+        last_day_of_current_month = None
+        
+        # Calculate the first day of the next month
+        first_day_of_next_month = None
+        if current_date.month == 12:
+            first_day_of_next_month = current_date.replace(day=1, month=1, year=current_date.year + 1)
+        else:
+            first_day_of_next_month = current_date.replace(day=1, month=current_date.month + 1)
+
+        # Subtract one day to get the last day of the current month
+        last_day_of_current_month = first_day_of_next_month - timedelta(days=1)
+
+        return last_day_of_current_month
+
+    def __get_last_date_of_next_month(self, current_date: datetime):
+        
+        # Calculate the first day of the month after the next month
+        if current_date.month == 12:
+            first_day_of_month_after_next = current_date.replace(day=1, month=1, year=current_date.year + 1)
+        elif current_date.month == 11:
+            first_day_of_month_after_next = current_date.replace(day=1, month=1, year=current_date.year + 1)
+        else:
+            first_day_of_month_after_next = current_date.replace(day=1, month=current_date.month + 2)
+        
+        # Subtract one day to get the last day of the next month
+        last_day_of_next_month = first_day_of_month_after_next - timedelta(days=1)
+        
+        return last_day_of_next_month
+
+    def __get_increased_today_current(self, current_date: datetime, months_to_add: int):
+        # Calculate the new month and year
+        new_month = current_date.month + months_to_add
+        new_year = current_date.year + (new_month - 1) // 12
+        new_month = (new_month - 1) % 12 + 1
+        
+        # Create a new datetime object with the calculated year and month, and set the day to 1
+        first_day_new_month = current_date.replace(year=new_year, month=new_month, day=1)
+
+        return first_day_new_month
+    
     def __generate_curl(self, root_curl_obj, from_date_template_str: str, to_date_template_str: str, iteration: int, days_of_stay: int):
         '''
         Generate a cURL. Take a `root_curl_obj` as input "default" cURL and modify a deep copy of it accordingly:
