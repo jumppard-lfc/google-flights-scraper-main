@@ -307,17 +307,15 @@ class CalendarMimicService:
         '''
         curls = []
         from_date_template_str = datetime.now().strftime('%Y-%m-%d')
-        to_date_template_str = self.__get_last_date_of_next_month().strftime('%Y-%m-%d')
+        to_date_template_str = self.__get_last_date_of_next_month(datetime.now()).strftime('%Y-%m-%d')
         number_of_necessary_clicks = self.__calculate_next_page_clicks()
-        for i in number_of_necessary_clicks:
+        for i in list(range(1, number_of_necessary_clicks + 1)):
             # generate cURL
             curl = self.__generate_curl(root_curl_obj, from_date_template_str, to_date_template_str, i, days_of_stay)
+            print(f'Generated cURL: {curl}')
             curls.append(curl)
 
         return curls
-    
-    def __get_last_date_of_next_month(self):
-        return datetime.now().replace(day=1, month=datetime.now().month+2) - timedelta(days=1)
 
     def __calculate_next_page_clicks(self):
         ''''
@@ -354,28 +352,20 @@ class CalendarMimicService:
 
         # region next months coverage
         ##############################################################
-        # covering the 1st and 2nd months in next page in Calendar
+        # covering the 1st and 2nd months in next pages in Calendar
         ##############################################################
         number_of_neccessary_clicks = 0
-        next_month_cnt = 3 # we start with the 3rd next month (2nd page in Calendar)
+        next_month_cnt = 2 # we start with the 2nd next month (2nd page in Calendar). So for example if today is January, we start with March (because March is first month in next page in Calendar).
         while covered_days < 180:
-
             # get the number of active dates for the 1st month
-            today_current = self.__get_increased_today_current(today, next_month_cnt) 
+            today_current = self.__get_increased_today(today, next_month_cnt) 
             last_day_of_first_month = self.__get_last_date_of_current_month(today_current)
-            # increase the counter by the number of active dates in next month
-            covered_days += last_day_of_first_month.day
-            # increase the counter for the next month
-            next_month_cnt += 1
-            
             # get the number of active dates for the 2nd month
-            today_current = self.__get_increased_today_current(today, next_month_cnt) 
             last_day_of_second_month = self.__get_last_date_of_next_month(today_current)
-            # increase the counter by the number of active dates in next month
-            covered_days += last_day_of_second_month.day
-            # increase the counter for the next month
-            next_month_cnt += 1
-            
+            # increase the counter by the number of active dates in current and next months
+            covered_days += (last_day_of_first_month.day + last_day_of_second_month.day)
+            # increase the counter for the next 2 months so we land on a next Calendar page
+            next_month_cnt += 2
             # increase the number of necessary clicks
             number_of_neccessary_clicks += 1
         # endregion next months coverage
@@ -415,7 +405,7 @@ class CalendarMimicService:
         
         return last_day_of_next_month
 
-    def __get_increased_today_current(self, current_date: datetime, months_to_add: int):
+    def __get_increased_today(self, current_date: datetime, months_to_add: int):
         # Calculate the new month and year
         new_month = current_date.month + months_to_add
         new_year = current_date.year + (new_month - 1) // 12
@@ -440,33 +430,28 @@ class CalendarMimicService:
         req_id_match = re.search(r"_reqid=(\d+)", root_curl_obj['url'])
         req_id = req_id_match.group(1) if req_id_match else None
         
-        # Replace the first two numbers from original string with value calculated as first two numbers from original string + iterations.
-        new_req_id_first_two_characters = int(req_id[0:2]) + iteration
-        first_character = str(new_req_id_first_two_characters)[0]
-        second_character = str(new_req_id_first_two_characters)[1]
-        remaining_characters = str(new_req_id_first_two_characters)[2:]
-
         # Increase URL's `_reqid`. Increase the 2nd number in the URL's `_reqid` by +1. So for example from 1030783 to 1130783.
-        final_req_id = None
-        if second_character == '9':
-            final_req_id = f"{int(first_character) + 1}0{remaining_characters}"
-        else:
-            final_req_id = f"{first_character}{int(second_character) + 1}{remaining_characters}"
-
+        final_req_id = self.__increase_req_id(int(req_id), iteration)
+        
         # Change the string of payload's `f.req` field, where we need to adjust `from_date` and `to_date`
-        if iteration == 0:
+        if iteration == 1:
             # get today's date
-            from_date_raw = datetime.now()
             from_date_str = datetime.now().strftime('%Y-%m-%d')
             # get last date of a next month
-            to_date_str = datetime.now().replace(day=1, month=datetime.now().month+1) - timedelta(days=1).strftime('%Y-%m-%d')
+            to_date_str = self.__get_last_date_of_next_month(datetime.now()).strftime('%Y-%m-%d') # datetime.now().replace(day=1, month=datetime.now().month+1) - timedelta(days=1).strftime('%Y-%m-%d')
+        elif iteration == 2:
+            # get the first date of a next month
+            from_date_datetime = self.__get_increased_today(datetime.now(), iteration)
+            from_date_str = from_date_datetime.strftime('%Y-%m-%d') # from_date_raw.replace(day=1, month=datetime.now().month+iteration).strftime('%Y-%m-%d')
+            # get the last date of a second next month
+            to_date_str = self.__get_last_date_of_next_month(from_date_datetime).strftime('%Y-%m-%d') # from_date_raw.replace(day=1, month=from_date_raw.month+iteration+1) - timedelta(days=1).strftime('%Y-%m-%d')
         else:
             # get the first date of a next month
-            from_date_raw = datetime.now()
-            from_date_str = from_date_raw.replace(day=1, month=datetime.now().month+iteration).strftime('%Y-%m-%d')
+            from_date_datetime = self.__get_increased_today(datetime.now(), iteration + 1)
+            from_date_str = from_date_datetime.strftime('%Y-%m-%d') # from_date_raw.replace(day=1, month=datetime.now().month+iteration).strftime('%Y-%m-%d')
             # get the last date of a second next month
-            to_date_str = from_date_raw.replace(day=1, month=from_date_raw.month+iteration+1) - timedelta(days=1).strftime('%Y-%m-%d')
-        
+            to_date_str = self.__get_last_date_of_next_month(from_date_datetime).strftime('%Y-%m-%d') # from_date_raw.replace(day=1, month=from_date_raw.month+iteration+1) - timedelta(days=1).strftime('%Y-%m-%d')
+
         payload = root_curl_obj['data']
         payload = payload.replace(from_date_template_str, from_date_str)
         payload = payload.replace(to_date_template_str, to_date_str)
@@ -476,10 +461,22 @@ class CalendarMimicService:
         
         # Create the result cURL
         result_curl = copy.deepcopy(root_curl_obj) # deep copy the root cURL object, so we do not modify the original object. We will return the modified object
-        result_curl['data'] = json.dumps(payload)
+        result_curl['data'] = payload
         result_curl['url'] = re.sub(r"_reqid=\d+", f"_reqid={final_req_id}", result_curl['url'])
 
-        return f"curl -X POST '{result_curl['url']}' -H 'Content-Type: application/json' -H 'Accept: application/json' -H 'Accept-Encoding: gzip, deflate, br' -H 'Accept-Language: en-US,en;q=0.9,sk;q=0.8' -H 'Connection: keep-alive' -H 'Host: www.google.com' -H 'Origin: https://www.google.com' -H 'Referer: https://www.google.com/travel/flights?hl=en-US&curr=EUR' -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' --data-raw '{result_curl['data']}'"
+        # create a headers string
+        headers_str = ' '.join([f"-H '{k}: {v}'" for k, v in result_curl['headers'].items()])
+
+        return f"curl -X POST '{result_curl['url']}' {headers_str} --data-raw '{result_curl['data']}'"
+
+    def __increase_req_id(self, req_id: int, iteration: int):
+        '''
+        Increase URL's `_reqid`. Increase the URL's `_reqid` by + `iteration` * google flights increasor constant. 
+        So for example if `iteration` is 1, increate `req_id` from 1030783 to 1130783.
+        '''
+        req_id_increase_constant = 100000 # this constant is defined by google flights itself. I discovered it by testing the google flights calendar picker.
+        return req_id + (iteration * req_id_increase_constant)
+        
 
     def __retrieve_oxylabs_responses(result_curls: list):
         result = []
