@@ -293,7 +293,7 @@ class CalendarMimicService:
     def __generate_curls(self, root_curl_obj, days_of_stay: int):
         '''
         Generate cURLs for each flight configuration. For example: all `days_of_stay` days of stay roundtrips from `origin` to `destination`, for next 180 days.
-        To get prices for next 180 days for the specific `day_of_stay` days of stay, we need to generate only around 4 cURLs, because in calendar picker we see prices for curernt month and the following month. 
+        To get prices for next 180 days for the specific `day_of_stay` days of stay, we need to generate only around 3-4 cURLs, because in calendar picker we see prices for curernt month and the following month. 
         return the list of cURLs.
 
         The logic for generating cURLs:
@@ -309,7 +309,7 @@ class CalendarMimicService:
         from_date_template_str = datetime.now().strftime('%Y-%m-%d')
         to_date_template_str = self.__get_last_date_of_next_month(datetime.now()).strftime('%Y-%m-%d')
         number_of_necessary_clicks = self.__calculate_next_page_clicks()
-        for i in list(range(1, number_of_necessary_clicks + 1)):
+        for i in list(range(0, number_of_necessary_clicks)):
             # generate cURL
             curl = self.__generate_curl(root_curl_obj, from_date_template_str, to_date_template_str, i, days_of_stay)
             print(f'Generated cURL: {curl}')
@@ -406,6 +406,10 @@ class CalendarMimicService:
         return last_day_of_next_month
 
     def __get_increased_today(self, current_date: datetime, months_to_add: int):
+        
+        if months_to_add == 0:
+            return current_date
+        
         # Calculate the new month and year
         new_month = current_date.month + months_to_add
         new_year = current_date.year + (new_month - 1) // 12
@@ -434,23 +438,9 @@ class CalendarMimicService:
         final_req_id = self.__increase_req_id(int(req_id), iteration)
         
         # Change the string of payload's `f.req` field, where we need to adjust `from_date` and `to_date`
-        if iteration == 1:
-            # get today's date
-            from_date_str = datetime.now().strftime('%Y-%m-%d')
-            # get last date of a next month
-            to_date_str = self.__get_last_date_of_next_month(datetime.now()).strftime('%Y-%m-%d') # datetime.now().replace(day=1, month=datetime.now().month+1) - timedelta(days=1).strftime('%Y-%m-%d')
-        elif iteration == 2:
-            # get the first date of a next month
-            from_date_datetime = self.__get_increased_today(datetime.now(), iteration)
-            from_date_str = from_date_datetime.strftime('%Y-%m-%d') # from_date_raw.replace(day=1, month=datetime.now().month+iteration).strftime('%Y-%m-%d')
-            # get the last date of a second next month
-            to_date_str = self.__get_last_date_of_next_month(from_date_datetime).strftime('%Y-%m-%d') # from_date_raw.replace(day=1, month=from_date_raw.month+iteration+1) - timedelta(days=1).strftime('%Y-%m-%d')
-        else:
-            # get the first date of a next month
-            from_date_datetime = self.__get_increased_today(datetime.now(), iteration + 1)
-            from_date_str = from_date_datetime.strftime('%Y-%m-%d') # from_date_raw.replace(day=1, month=datetime.now().month+iteration).strftime('%Y-%m-%d')
-            # get the last date of a second next month
-            to_date_str = self.__get_last_date_of_next_month(from_date_datetime).strftime('%Y-%m-%d') # from_date_raw.replace(day=1, month=from_date_raw.month+iteration+1) - timedelta(days=1).strftime('%Y-%m-%d')
+        from_date_datetime = self.__get_increased_today(datetime.now(), 2*iteration) # 2 is a constant, because in 1 calendar page, there are 2 months
+        from_date_str = from_date_datetime.strftime('%Y-%m-%d')
+        to_date_str = self.__get_last_date_of_next_month(from_date_datetime).strftime('%Y-%m-%d')
 
         payload = root_curl_obj['data']
         payload = payload.replace(from_date_template_str, from_date_str)
@@ -479,6 +469,9 @@ class CalendarMimicService:
         
 
     def __retrieve_oxylabs_responses(result_curls: list):
+
+        # todo: decide if we want to send 1 by 1, or in batch
+
         result = []
         for curl in result_curls:
             # send cURLs to Oxylabs
