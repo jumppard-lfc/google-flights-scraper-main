@@ -7,7 +7,7 @@ import pprint
 from typing import List
 
 from app.models import AppRun, FlightsSearchConfiguration, Report
-from app.services import oxylabs_api_service, database_service
+from app.services import oxylabs_api_service, database_service, misc_service
 
 import playwright
 from playwright.sync_api import sync_playwright
@@ -42,6 +42,11 @@ class CalendarMimicService:
 
         # iterate over `destinations` and for each destination, generate a set of cURLs
         result_curls = self.__generate_result_curls_temp(destinations)
+
+        # send oxylabs API requests and retrieve oxylabs responses
+        oxylabs_responses = self.__retrieve_oxylabs_responses(result_curls)
+
+    
 
     def main(self) -> dict:
         ''''
@@ -113,7 +118,7 @@ class CalendarMimicService:
                 origins = flight_configurations[0].origin.split(',')
                 root_curl = self.__generate_root_curl(origins, destination, flight_configurations[0].days_of_stay)
                 print(f'Root cURL: {root_curl}')
-                root_curl_obj = self.__parse_curl(root_curl) # parse the cURL to get the root cURL object with all cURL parts as attributes
+                root_curl_obj = misc_service.parse_curl(root_curl) # self.__parse_curl(root_curl) # parse the cURL to get the root cURL object with all cURL parts as attributes
                 for flight in flight_configurations:
                     # Generate cURLs for each flight configuration. For example: all 7 days of stay roundtrips from BTS to JFK, for next 180 days
                     curls = self.__generate_curls(root_curl_obj, flight.days_of_stay)
@@ -140,7 +145,7 @@ class CalendarMimicService:
             if len(flight_configurations) > 0:
                 origins = flight_configurations[0].origin.split(',')
                 root_curl = self.__generate_root_curl(origins, destination, flight_configurations[0].days_of_stay)
-                root_curl_obj = self.__parse_curl(root_curl) # parse the cURL to get the root cURL object with all cURL parts as attributes
+                root_curl_obj = misc_service.parse_curl(root_curl) # self.__parse_curl(root_curl) # parse the cURL to get the root cURL object with all cURL parts as attributes
                 for flight in flight_configurations:
                     # Generate cURLs for each flight configuration. For example: all 7 days of stay roundtrips from BTS to JFK, for next 180 days
                     curls = self.__generate_curls(root_curl_obj, flight.days_of_stay)
@@ -261,34 +266,6 @@ class CalendarMimicService:
                 self.curl_command = construct_curl(request)
 
         page.on('request', on_request)
-
-    def __parse_curl(self, curl: str):
-        
-        '''
-        In this function, we will parse the cURL to get the root cURL object with all cURL parts as attributes.
-        return the root cURL object
-        '''
-        
-        # Extract the URL
-        url_match = re.search(r"curl -X POST '(.*?)'", curl)
-        url = url_match.group(1) if url_match else None
-
-        # Extract the headers
-        headers = {}
-        header_matches = re.findall(r"-H '(.*?)'", curl)
-        for header in header_matches:
-            key, value = header.split(": ", 1)
-            headers[key] = value
-
-        # Extract the data
-        data_match = re.search(r"--data-raw '(.*?)'", curl)
-        data = data_match.group(1) if data_match else None
-
-        return {
-            "url": url,
-            "headers": headers,
-            "data": data
-        }
 
     def __generate_curls(self, root_curl_obj, days_of_stay: int):
         '''
@@ -467,17 +444,13 @@ class CalendarMimicService:
         req_id_increase_constant = 100000 # this constant is defined by google flights itself. I discovered it by testing the google flights calendar picker.
         return req_id + (iteration * req_id_increase_constant)
         
-
-    def __retrieve_oxylabs_responses(result_curls: list):
-
-        # todo: decide if we want to send 1 by 1, or in batch
-
+    def __retrieve_oxylabs_responses(self, result_curls: list):
         result = []
         for curl in result_curls:
             # send cURLs to Oxylabs
-            response = oxylabs_api_service.send_curl(curl)
+            response = self.oxylabs_api_service.send_request(curl)
             # process the response
-            processed_response = oxylabs_api_service.process_response(response)
+            processed_response = self.oxylabs_api_service.process_response(response)
             result.append({'curl_request': curl, 'curl_response': processed_response, 'success': processed_response['success']})
         return result
     
