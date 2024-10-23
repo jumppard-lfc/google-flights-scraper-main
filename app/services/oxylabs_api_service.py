@@ -1,4 +1,5 @@
 import os
+from pprint import pprint
 import requests
 from dotenv import load_dotenv
 import base64
@@ -18,8 +19,8 @@ class OxylabsApiService:
     def send_request(self, curl):
         
         ''''
-        This method sends retrieves a cURL request and transforms it to the format supported by Oxylabs API.
-        It returns the response of Oxylabs API call.
+        This function is responsible for building the payload and sending the request to the Oxylabs API.
+        It returns the response from Oxylabs API call.
         '''
         
         # Get URL, headers, and payload from cURL.
@@ -41,7 +42,7 @@ class OxylabsApiService:
                     "value": base64_encoded_data
                 },
             ],
-            'source': 'google',
+            'source': 'universal',
             'url': parsed_curl['url'],
         }
 
